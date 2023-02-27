@@ -105,43 +105,19 @@ https://javaguide.cn/system-design/framework/spring/spring-transaction.html
 - 在方法中捕获的异常没有抛出去
 - 没有使用代理对象调用
 
-## Spring是如何解决的循环依赖？
+## Spring如何解决循环依赖？
 
-> 德胧集团，百度，字节
+> 德胧集团，百度，字节，阿里云
 
-我们都知道，单例 Bean 初始化完成，要经历三步：
+Spring 容器在初始化时，会通过两个步骤来创建 Bean，首先会实例化对象，然后为这个对象设置属性或注入依赖。当 Bean 之间存在循环依赖时，这两个步骤会相互阻塞，从而导致 Spring 容器无法完成 Bean 的创建。Spring 通过三级缓存机制来解决这个问题。
 
-![Bean初始化步骤](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-867066f1-49d1-4e57-94f9-4c66a3a8797e.png)
+具体来说，当 Spring 容器创建 Bean 时，会将 Bean 的实例化和属性设置分开进行。首先，Spring 容器会实例化所有 Bean，但并不会为其设置属性或注入依赖。这样就避免了循环依赖中的相互阻塞问题。
 
-注入就发生在第二步，**属性赋值**，结合这个过程，Spring 通过**三级缓存**解决了循环依赖：
+接着，Spring 容器会将已经实例化的 Bean 放入一个缓存中，该缓存被称为“singletonObjects”缓存。当 Spring 容器为一个 Bean 设置属性或注入依赖时，如果发现该 Bean 存在循环依赖，就会将该 Bean 的代理对象放入第二级缓存“earlySingletonObjects”中。这里的代理对象是一个空壳子，它不会实际执行任何方法，只是为了让 Spring 容器能够处理循环依赖。
 
-1. 一级缓存 : `Map<String,Object>` **singletonObjects**，单例池，用于保存实例化、属性赋值（注入）、初始化完成的 bean 实例
-2. 二级缓存 : `Map<String,Object>` **earlySingletonObjects**，早期曝光对象，用于保存实例化完成的 bean 实例
-3. 三级缓存 : `Map<String,ObjectFactory<?>>` **singletonFactories**，早期曝光对象工厂，用于保存 bean 创建工厂，以便于后面扩展有机会创建代理对象。
+最后，当所有 Bean 都被实例化并设置完属性后，Spring 容器会通过“populateBean”方法为每个 Bean 注入依赖。这时，Spring 容器会从第二级缓存“earlySingletonObjects”中获取代理对象，然后通过代理对象来解决循环依赖。当所有 Bean 的依赖注入完成后，Spring 容器会将这些 Bean 放入第三级缓存“singletonFactories”中，以供后续使用。
 
-![三级缓存](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-01d92863-a2cb-4f61-8d8d-30ecf0279b28.png)
-
-我们来看一下三级缓存解决循环依赖的过程：
-
-当 A、B 两个类发生循环依赖时： ![循环依赖](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-cfc09f84-f8e1-4702-80b6-d115843e81fe.png)
-
-A 实例的初始化过程：
-
-1. 创建 A 实例，实例化的时候把 A 对象⼯⼚放⼊三级缓存，表示 A 开始实例化了，虽然我这个对象还不完整，但是先曝光出来让大家知道
-
-![1](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-1a8bdc29-ff43-4ff4-9b61-3eedd9da59b3.png)
-
-1. A 注⼊属性时，发现依赖 B，此时 B 还没有被创建出来，所以去实例化 B
-2. 同样，B 注⼊属性时发现依赖 A，它就会从缓存里找 A 对象。依次从⼀级到三级缓存查询 A，从三级缓存通过对象⼯⼚拿到 A，发现 A 虽然不太完善，但是存在，把 A 放⼊⼆级缓存，同时删除三级缓存中的 A，此时，B 已经实例化并且初始化完成，把 B 放入⼀级缓存。
-
-![2](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-bf2507bf-96aa-4b88-a58b-7ec41d11bc70.png)
-
-1. 接着 A 继续属性赋值，顺利从⼀级缓存拿到实例化且初始化完成的 B 对象，A 对象创建也完成，删除⼆级缓存中的 A，同时把 A 放⼊⼀级缓存
-2. 最后，⼀级缓存中保存着实例化、初始化都完成的 A、B 对象
-
-![5](https://cdn.tobebetterjavaer.com/tobebetterjavaer/images/sidebar/sanfene/spring-022f7cb9-2c83-4fe9-b252-b02bd0fb2435.png)
-
-所以，我们就知道为什么 Spring 能解决 setter 注入的循环依赖了，因为实例化和属性赋值是分开的，所以里面有操作的空间。如果都是构造器注入的化，那么都得在实例化这一步完成注入，所以自然是无法支持了。
+总的来说，Spring 容器通过三级缓存机制，通过创建 Bean 的代理对象来避免循环依赖问题，并最终解决了这个问题。
 
 # Spring IoC
 
@@ -456,74 +432,23 @@ Spring 中 JDK 动态代理通过 JdkDynamicAopProxy 调用 Proxy 的 `newInstan
 
 ## Spring AOP的实现方式
 
-> 百度，字节
+> 百度，字节，阿里云
 
-**（一）静态代理**
+Spring AOP（Aspect-Oriented Programming）是一种面向切面编程的技术，它通过动态代理的方式，实现了将横切关注点（如日志、事务、安全等）从核心业务逻辑中分离出来的功能。Spring AOP 的实现方式主要有两种：基于 JDK 动态代理和基于 CGLIB 动态代理。
 
-就是在代码里面创建一个代理类，实现目标类的接口，目标对象是代理类的成员变量，外界需要执行方法时，调用代理类的方法，代理类的方法内部先执行额外的操作，日志记录等，然后再调用目标类的方法。
+1. 基于 JDK 动态代理
 
-```java
-public interface IUserDao {
-    void save();
-}
-public class UserDao implements IUserDao {
-    public void save() {
-        System.out.println("已经保存数据...");
-    }
-}
-//代理类
-public class UserDaoProxy implements IUserDao {
-    private IUserDao target;
-    public UserDaoProxy(IUserDao iuserDao) {
-        this.target = iuserDao;
-    } 
-    public void save() {
-        System.out.println("开启事务...");
-        target.save();
-        System.out.println("关闭事务...");
-    }
-}
-```
+JDK 动态代理是基于接口的代理方式。当一个类实现了接口时，可以使用 JDK 动态代理为该类生成代理对象。JDK 动态代理的核心是 InvocationHandler 接口和 Proxy 类。InvocationHandler 接口中定义了一个 invoke() 方法，该方法包含了调用代理对象方法时的逻辑处理。Proxy 类则是实现了代理对象的生成，它通过传入目标对象的接口和 InvocationHandler 对象，动态地生成代理对象。
 
-**（二）JDK动态代理**
+Spring AOP 中，基于 JDK 动态代理的方式只能代理实现了接口的类。当一个 Bean 实现了接口时，Spring AOP 就会使用 JDK 动态代理来生成代理对象。
 
-  **Spring默认使用JDK的动态代理实现AOP，类如果实现了接口，Spring就会使用这种方式实现动态代理**。熟悉`Java`语言的应该会对`JDK`动态代理有所了解。`JDK`实现动态代理需要两个组件，首先第一个就是`InvocationHandler`接口。我们在使用`JDK`的动态代理时，需要编写一个类，去实现这个接口，然后重写`invoke`方法，这个方法其实就是我们提供的代理方法。然后`JDK`动态代理需要使用的第二个组件就是`Proxy`这个类，我们可以通过这个类的`newProxyInstance`方法，返回一个代理对象。生成的代理类实现了原来那个类的所有接口，并对接口的方法进行了代理，我们通过代理对象调用这些方法时，底层将通过反射，调用我们实现的`invoke`方法。
+2. 基于 CGLIB 动态代理
 
-**（三）cglib动态代理**
+CGLIB 动态代理是基于继承的代理方式。当一个类没有实现接口时，可以使用 CGLIB 动态代理为该类生成代理对象。CGLIB 动态代理的核心是 MethodInterceptor 接口和 Enhancer 类。MethodInterceptor 接口中定义了一个 intercept() 方法，该方法包含了调用代理对象方法时的逻辑处理。Enhancer 类则是实现了代理对象的生成，它通过传入目标对象的类和 MethodInterceptor 对象，动态地生成代理对象。
 
-  `JDK`的动态代理存在限制，那就是被代理的类必须是一个实现了接口的类，代理类需要实现相同的接口，代理接口中声明的方法。若需要代理的类没有实现接口，此时`JDK`的动态代理将没有办法使用，于是`Spring`会使用`CGLib`的动态代理来生成代理对象。`CGLib`直接操作字节码，生成类的子类，重写类的方法完成代理。
+Spring AOP 中，基于 CGLIB 动态代理的方式可以代理没有实现接口的类。当一个 Bean 没有实现接口时，Spring AOP 就会使用 CGLIB 动态代理来生成代理对象。如果一个 Bean 实现了接口，但同时也满足 CGLIB 的代理条件，则 Spring AOP 也可以使用 CGLIB 动态代理来生成代理对象。
 
-CGLIB主要是通过创建一个代理类，继承原来的类，并且重写父类的方法，然后将代理类实例返回，后续调用代理类的方法时，先执行一些额外的AOP相关的记录操作，然后再去执行父类的方法。（由于在Java中子类只能继承父类的非private的属性和方法，所以**由CGLIB创建的代理类，不会包含父类中的final或者private修饰的方法，**aop也无法捕获private相关的方法）
-
-创建一个类，继承MethodInterceptor类，重写intercept方法，接受方法调用。创建一个Enhancer实例，设置代理类的父类为目标类，设置回调。
-
-```java
-public static void main(final String[] args) {
-    System.setProperty(DebuggingClassWriter.DEBUG_LOCATION_PROPERTY, "/Users/ruiwendaier/Downloads/testaop");
-    Enhancer enhancer = new Enhancer();
-    enhancer.setSuperclass(Test.class);
-    enhancer.setCallback(new MyMethodInterceptor());
-    Test test1 = (Test)enhancer.create();
-    test1.test();
-
-}
-public static class MyMethodInterceptor implements MethodInterceptor {
-    @Override
-    public Object intercept(Object o, Method method, Object[] objects, MethodProxy methodProxy) throws Throwable {
-        System.out.println("Before: "  + method.getName());
-        Object object = methodProxy.invokeSuper(o, objects);
-        System.out.println("After: " + method.getName());
-        return object;
-    }
-}
-public static class Test implements TestInterface {
-    public void test() {
-        System.out.printf("111111");
-    }
-}
-```
-
-生成的代理类中，对于父类中每一个能够继承重写的方法，动态代理类都会生成两个相应的方法。一个是方法内是直接调用父类(也就是目标类的方法)，一个是生成的对应的动态代理的方法，里面会先调用代理类设置的intercept回调方法，然后再调用父类的方法。在调用时，会直接先调用重写的方法。
+总的来说，Spring AOP 的实现方式主要有基于 JDK 动态代理和基于 CGLIB 动态代理两种。选择哪种方式取决于目标对象是否实现了接口。对于实现了接口的类，建议使用基于 JDK 动态代理的方式；对于没有实现接口的类，则建议使用基于 CGLIB 动态代理的方式。
 
 ## AOP在什么时候会失效
 
@@ -761,16 +686,13 @@ SpringBoot 开启自动配置的注解是`@EnableAutoConfiguration` ，启动类
 
 ## SpringBoot启动流程
 
-> 阿里云，浪潮
+> 阿里云*2，浪潮
 
-1. 从`spring.factories`配置文件中**加载`EventPublishingRunListener`对象**，该对象拥有`SimpleApplicationEventMulticaster`属性，即在SpringBoot启动过程的不同阶段用来发射内置的生命周期事件;
-2. **准备环境变量**，包括系统变量，环境变量，命令行参数，默认变量，`servlet`相关配置变量，随机值以及配置文件（比如`application.properties`）等;
-3. 控制台**打印SpringBoot的`bannner`标志**；
-4. **根据不同类型环境创建不同类型的`applicationcontext`容器**，因为这里是`servlet`环境，所以创建的是`AnnotationConfigServletWebServerApplicationContext`容器对象；
-5. 从`spring.factories`配置文件中**加载`FailureAnalyzers`对象**,用来报告SpringBoot启动过程中的异常；
-6. **为刚创建的容器对象做一些初始化工作**，准备一些容器属性值等，对`ApplicationContext`应用一些相关的后置处理和调用各个`ApplicationContextInitializer`的初始化方法来执行一些初始化逻辑等；
-7. **刷新容器**，这一步至关重要。比如调用`bean factory`的后置处理器，注册`BeanPostProcessor`后置处理器，初始化事件广播器且广播事件，初始化剩下的单例`bean`和SpringBoot创建内嵌的`Tomcat`服务器等等重要且复杂的逻辑都在这里实现，主要步骤可见代码的注释，关于这里的逻辑会在以后的spring源码分析专题详细分析；
-8. **执行刷新容器后的后置处理逻辑**，注意这里为空方法；
-9. **调用`ApplicationRunner`和`CommandLineRunner`的run方法**，我们实现这两个接口可以在spring容器启动后需要的一些东西比如加载一些业务数据等;
-10. **报告启动异常**，即若启动过程中抛出异常，此时用`FailureAnalyzers`来报告异常;
-11. 最终**返回容器对象**，这里调用方法没有声明对象来接收。
+Spring Boot 启动过程主要包括以下几个阶段：
+
+1. 加载配置文件和自动配置：Spring Boot 在启动时会读取 classpath 下的 application.properties 或 application.yml 配置文件，并将配置信息加载到 Spring 环境中。同时，Spring Boot 还会根据类路径下的 META-INF/spring.factories 文件中配置的自动配置类，自动配置 Spring 应用程序。
+2. 启动 Spring 应用上下文：Spring Boot 通过 SpringApplication 类来启动应用程序上下文。在启动过程中，Spring Boot 会根据配置文件中的配置信息创建对应的 Spring Bean，并将它们添加到应用程序上下文中。同时，Spring Boot 还会扫描应用程序的类路径，寻找与 Spring 相关的注解，并将这些注解转换为 Spring Bean。
+3. 执行 CommandLineRunner 和 ApplicationRunner：Spring Boot 在启动后会依次执行实现了 CommandLineRunner 或 ApplicationRunner 接口的 Bean 的 run 方法，从而完成一些额外的初始化工作。
+4. 启动 Servlet 容器：Spring Boot 会启动嵌入式 Servlet 容器（如 Tomcat、Jetty 等），并将应用程序部署到容器中，使得应用程序可以接收请求并处理响应。
+
+总的来说，Spring Boot 启动过程是一个比较复杂的流程，它涉及到了很多模块和组件，需要对 Spring Boot 的各个组成部分有深入的了解才能更好地理解和应用。

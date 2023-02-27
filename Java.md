@@ -1413,57 +1413,28 @@ class PollingWatchService
 
 ### NIO (Non-blocking/New I/O)
 
-**NIO** 是 JDK1.4 引入的同步非阻塞 IO。服务器实现模式为多个连接请求对应一个线程，客户端连接请求会注册到一个多路复用器 Selector ，Selector 轮询到连接有 IO 请求时才启动一个线程处理。适用连接数目多且连接时间短的场景。
+> 阿里云
 
-同步是指线程还是要不断接收客户端连接并处理数据，非阻塞是指如果一个管道没有数据，不需要等待，可以轮询下一个管道。
+NIO（Non-blocking I/O）是Java中提供的一种非阻塞式I/O机制。与传统的I/O模型相比，NIO模型具有更高的并发性能和可扩展性。
 
-核心组件：
+NIO模型的核心是Channel和Buffer。Channel代表一个打开的连接，可以对Channel进行读写操作。Buffer是一个容器，存储数据并进行读写操作。
 
-- **Selector：** 多路复用器，轮询检查多个 Channel 的状态，判断注册事件是否发生，即判断 Channel 是否处于可读或可写状态。使用前需要将 Channel 注册到 Selector，注册后会得到一个 SelectionKey，通过 SelectionKey 获取 Channel 和 Selector 相关信息。
+NIO模型的主要特点如下：
 
-- **Channel：** 双向通道，替换了 BIO 中的 Stream 流，不能直接访问数据，要通过 Buffer 来读写数据，也可以和其他 Channel 交互。
+1. 非阻塞式I/O：NIO模型通过使用Selector选择器，实现了异步非阻塞I/O。当数据准备好时，可以直接进行读取，而不需要一直等待数据准备好。
+2. Channel和Buffer：NIO模型使用Channel和Buffer来处理数据，Channel负责读写数据，Buffer负责缓存数据。
+3. 事件驱动机制：NIO模型使用Selector选择器和事件驱动机制，只有当数据准备好时，才会进行读取操作。
+4. 多路复用：NIO模型可以使用一个线程处理多个Channel，提高了并发性能和可扩展性。
 
-- **Buffer：** 缓冲区，本质是一块可读写数据的内存，用来简化数据读写。Buffer 三个重要属性：position 下次读写数据的位置，limit 本次读写的极限位置，capacity 最大容量。
+NIO模型的基本工作流程如下：
 
-  - `flip` 将写转为读，底层实现原理把 position 置 0，并把 limit 设为当前的 position 值。
-  - `clear` 将读转为写模式（用于读完全部数据的情况，把 position 置 0，limit 设为 capacity）。
-  - `compact` 将读转为写模式（用于存在未读数据的情况，让 position 指向未读数据的下一个）。
-  - 通道方向和 Buffer 方向相反，读数据相当于向 Buffer 写，写数据相当于从 Buffer 读。
+1. 创建Channel：通过SocketChannel或ServerSocketChannel创建一个Channel。
+2. 创建Buffer：创建一个Buffer对象，用于缓存数据。
+3. 注册Channel：将Channel注册到Selector选择器中。
+4. 处理事件：Selector选择器不断轮询所有注册的Channel，当数据准备好时，触发事件并进行处理。
+5. 处理请求：根据事件类型，进行读写操作。
 
-  使用步骤：向 Buffer 写数据，调用 flip 方法转为读模式，从 Buffer 中读数据，调用 clear 或 compact 方法清空缓冲区。
-
-Java 中的 NIO 于 Java 1.4 中引入，对应 `java.nio` 包，提供了 `Channel` , `Selector`，`Buffer` 等抽象。NIO 中的 N 可以理解为 Non-blocking，不单纯是 New。它是支持面向缓冲的，基于通道的 I/O 操作方法。 对于高负载、高并发的（网络）应用，应使用 NIO 。
-
-Java 中的 NIO 可以看作是 **I/O 多路复用模型**。也有很多人认为，Java 中的 NIO 属于同步非阻塞 IO 模型。
-
-跟着我的思路往下看看，相信你会得到答案！
-
-我们先来看看 **同步非阻塞 IO 模型**。
-
-![图源：《深入拆解Tomcat & Jetty》](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/bb174e22dbe04bb79fe3fc126aed0c61~tplv-k3u1fbpfcp-watermark.image)
-
-同步非阻塞 IO 模型中，应用程序会一直发起 read 调用，等待数据从内核空间拷贝到用户空间的这段时间里，线程依然是阻塞的，直到在内核把数据拷贝到用户空间。
-
-相比于同步阻塞 IO 模型，同步非阻塞 IO 模型确实有了很大改进。通过轮询操作，避免了一直阻塞。
-
-但是，这种 IO 模型同样存在问题：**应用程序不断进行 I/O 系统调用轮询数据是否已经准备好的过程是十分消耗 CPU 资源的。**
-
-这个时候，**I/O 多路复用模型** 就上场了。
-
-![](https://p6-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/88ff862764024c3b8567367df11df6ab~tplv-k3u1fbpfcp-watermark.image)
-
-IO 多路复用模型中，线程首先发起 select 调用，询问内核数据是否准备就绪，等内核把数据准备好了，用户线程再发起 read 调用。read 调用的过程（数据从内核空间 -> 用户空间）还是阻塞的。
-
-> 目前支持 IO 多路复用的系统调用，有 select，epoll 等等。select 系统调用，目前几乎在所有的操作系统上都有支持。
->
-> - **select 调用** ：内核提供的系统调用，它支持一次查询多个系统调用的可用状态。几乎所有的操作系统都支持。
-> - **epoll 调用** ：linux 2.6 内核，属于 select 调用的增强版本，优化了 IO 的执行效率。
-
-**IO 多路复用模型，通过减少无效的系统调用，减少了对 CPU 资源的消耗。**
-
-Java 中的 NIO ，有一个非常重要的**选择器 ( Selector )** 的概念，也可以被称为 **多路复用器**。通过它，只需要一个线程便可以管理多个客户端连接。当客户端数据到了之后，才会为其服务。
-
-![](https://p3-juejin.byteimg.com/tos-cn-i-k3u1fbpfcp/0f483f2437ce4ecdb180134270a00144~tplv-k3u1fbpfcp-watermark.image)
+NIO模型是Java中常用的I/O模型之一，主要应用于高并发、高性能的网络编程场景，如服务器端的网络编程、网络游戏等。
 
 ### AIO (Asynchronous I/O)
 
@@ -1485,29 +1456,17 @@ AIO 也就是 NIO 2。Java 7 中引入了 NIO 的改进版 NIO 2,它是异步 IO
 
 ![](https://images.xiaozhuanlan.com/photo/2020/33b193457c928ae02217480f994814b6.png)
 
-## 序列化和反序列化是什么？
+## NIO 使用了内核的什么功能
 
-> 美团
+> 阿里云
 
-序列化是指将对象的状态转换为可存储或传输的形式的过程，而反序列化则是将序列化的数据转换回原始对象的过程。序列化可以将对象的状态保存到文件中，或者将对象的状态通过网络传输到另一台计算机。反序列化则可以从文件中读取序列化的数据，或者从网络中接收序列化的数据，并将其转换回原始对象。
+NIO使用了操作系统内核的I/O多路复用机制，具体来说，就是通过select、poll、epoll这些系统调用实现的。这些系统调用可以监控多个Socket，当其中有一个或多个Socket可读或可写时，就会通知应用程序进行处理。
 
-## 常见序列化协议有哪些？
+在Java中，NIO使用的是Selector类来实现I/O多路复用。Selector内部使用的是底层操作系统的I/O多路复用机制，通过注册Channel来监听事件，当事件发生时，Selector就会通知应用程序进行处理。
 
-> zoom
+在Linux系统中，select和poll是早期的I/O多路复用机制，它们都需要将Socket的文件描述符添加到一个集合中，然后通过系统调用来监听这个集合中的Socket。但是随着Socket数量的增加，这种方式的效率会变得越来越低。
 
-JDK 自带的序列化方式一般不会用 ，因为序列化效率低并且存在安全问题。比较常用的序列化协议有 Hessian、Kryo、Protobuf、ProtoStuff，这些都是基于二进制的序列化协议。
-
-像 JSON 和 XML 这种属于文本类序列化方式。虽然可读性比较好，但是性能较差，一般不会选择。
-
-## 为什么不推荐使用 JDK 自带的序列化？
-
-> zoom
-
-我们很少或者说几乎不会直接使用 JDK 自带的序列化方式，主要原因有下面这些原因：
-
-- **不支持跨语言调用** : 如果调用的是其他语言开发的服务的时候就不支持了。
-- **性能差** ：相比于其他序列化框架性能更低，主要原因是序列化之后的字节数组体积较大，导致传输成本加大。
-- **存在安全问题** ：序列化和反序列化本身并不存在问题。但当输入的反序列化的数据可被用户控制，那么攻击者即可通过构造恶意输入，让反序列化产生非预期的对象，在此过程中执行构造的任意代码。
+为了解决这个问题，Linux内核引入了epoll机制。epoll与select/poll的不同之处在于，它不需要将Socket添加到集合中，而是使用一个文件描述符来管理所有的Socket，从而提高了效率。因此，在高并发的场景中，使用epoll比select和poll更加高效。Java中的NIO也可以使用epoll机制，但是需要在Linux操作系统上运行，并且需要设置一些系统参数。
 
 ## IO多路复用select、poll 和 epoll 
 
@@ -1552,6 +1511,30 @@ select本质上是通过设置或者检查存放fd标志位的数据结构来进
 ![image-20230215132942774](E:\Typora\image-20230215132942774.png)
 
 # 其他
+
+## 序列化和反序列化是什么？
+
+> 美团
+
+序列化是指将对象的状态转换为可存储或传输的形式的过程，而反序列化则是将序列化的数据转换回原始对象的过程。序列化可以将对象的状态保存到文件中，或者将对象的状态通过网络传输到另一台计算机。反序列化则可以从文件中读取序列化的数据，或者从网络中接收序列化的数据，并将其转换回原始对象。
+
+## 常见序列化协议有哪些？
+
+> zoom
+
+JDK 自带的序列化方式一般不会用 ，因为序列化效率低并且存在安全问题。比较常用的序列化协议有 Hessian、Kryo、Protobuf、ProtoStuff，这些都是基于二进制的序列化协议。
+
+像 JSON 和 XML 这种属于文本类序列化方式。虽然可读性比较好，但是性能较差，一般不会选择。
+
+## 为什么不推荐使用 JDK 自带的序列化？
+
+> zoom
+
+我们很少或者说几乎不会直接使用 JDK 自带的序列化方式，主要原因有下面这些原因：
+
+- **不支持跨语言调用** : 如果调用的是其他语言开发的服务的时候就不支持了。
+- **性能差** ：相比于其他序列化框架性能更低，主要原因是序列化之后的字节数组体积较大，导致传输成本加大。
+- **存在安全问题** ：序列化和反序列化本身并不存在问题。但当输入的反序列化的数据可被用户控制，那么攻击者即可通过构造恶意输入，让反序列化产生非预期的对象，在此过程中执行构造的任意代码。
 
 ## Java动态代理
 
@@ -1709,129 +1692,51 @@ after method send
 
 ### CGLIB 动态代理机制
 
-#### 介绍
+CGLIB是一个强大的第三方动态代理库，它可以在运行时生成一个目标类的子类，并重写目标类中的方法，以便在执行目标类的方法之前或之后执行一些其他逻辑。CGLIB动态代理主要用于创建没有接口的Java类的代理。
 
-**JDK 动态代理有一个最致命的问题是其只能代理实现了接口的类。**
+相比于Java标准库自带的动态代理API，CGLIB的优点在于：
 
-**为了解决这个问题，我们可以用 CGLIB 动态代理机制来避免。**
+- 支持创建没有接口的代理类
+- 支持代理类方法上的任意参数和返回值类型
+- 比JDK动态代理更快，因为它不需要通过反射调用代理方法
 
-CGLIB(*Code Generation Library*)是一个基于ASM的字节码生成库，它允许我们在运行时对字节码进行修改和动态生成。CGLIB 通过继承方式实现代理。很多知名的开源框架都使用到了CGLIB， 例如 Spring 中的 AOP 模块中：如果目标对象实现了接口，则默认采用 JDK 动态代理，否则采用 CGLIB 动态代理。
+使用CGLIB动态代理的基本步骤如下：
 
-**在 CGLIB 动态代理机制中 `MethodInterceptor` 接口和 `Enhancer` 类是核心。**
+1. 创建一个实现了MethodInterceptor接口的拦截器类，该拦截器负责在目标方法执行前后添加逻辑。
+2. 创建一个Enhancer对象，并设置被代理类的类对象和拦截器。
+3. 通过Enhancer对象的create方法创建代理对象。
 
-你需要自定义 `MethodInterceptor` 并重写 `intercept` 方法，`intercept` 用于拦截增强被代理类的方法。
+下面是一个使用CGLIB动态代理的示例代码：
 
-```java
-public interface MethodInterceptor
-extends Callback{
-    // 拦截被代理类中的方法
-    public Object intercept(Object obj, java.lang.reflect.Method method, Object[] args,MethodProxy proxy) throws Throwable;
-}
-```
-
-1. **obj** : 被代理的对象（需要增强的对象）
-2. **method** : 被拦截的方法（需要增强的方法）
-3. **args** : 方法入参
-4. **proxy** : 用于调用原始方法
-
-你可以通过 `Enhancer`类来动态获取被代理类，当代理类调用方法的时候，实际调用的是 `MethodInterceptor` 中的 `intercept` 方法。
-
-#### CGLIB 动态代理类使用步骤
-
-1. 定义一个类；
-2. 自定义 `MethodInterceptor` 并重写 `intercept` 方法，`intercept` 用于拦截增强被代理类的方法，和 JDK 动态代理中的 `invoke` 方法类似；
-3. 通过 `Enhancer` 类的 `create()`创建代理类；
-
-#### 代码示例
-
-不同于 JDK 动态代理不需要额外的依赖。CGLIB(*Code Generation Library*) 实际是属于一个开源项目，如果你要使用它的话，需要手动添加相关依赖。
-
-```xml
-<dependency>
-  <groupId>cglib</groupId>
-  <artifactId>cglib</artifactId>
-  <version>3.3.0</version>
-</dependency>
-```
-
-**1.实现一个使用阿里云发送短信的类**
-
-```java
-package github.javaguide.dynamicProxy.cglibDynamicProxy;
-
-public class AliSmsService {
-    public String send(String message) {
-        System.out.println("send message:" + message);
-        return message;
-    }
-}
-```
-
-**2.自定义 `MethodInterceptor`（方法拦截器）**
-
-```java
-import net.sf.cglib.proxy.MethodInterceptor;
-import net.sf.cglib.proxy.MethodProxy;
-
-import java.lang.reflect.Method;
-
-/**
- * 自定义MethodInterceptor
- */
-public class DebugMethodInterceptor implements MethodInterceptor {
-    /**
-     * @param o           被代理的对象（需要增强的对象）
-     * @param method      被拦截的方法（需要增强的方法）
-     * @param args        方法入参
-     * @param methodProxy 用于调用原始方法
-     */
+```Java
+public class UserServiceInterceptor implements MethodInterceptor {
     @Override
-    public Object intercept(Object o, Method method, Object[] args, MethodProxy methodProxy) throws Throwable {
-        //调用方法之前，我们可以添加自己的操作
-        System.out.println("before method " + method.getName());
-        Object object = methodProxy.invokeSuper(o, args);
-        //调用方法之后，我们同样可以添加自己的操作
-        System.out.println("after method " + method.getName());
-        return object;
+    public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) throws Throwable {
+        System.out.println("执行目标方法之前的逻辑...");
+        Object result = proxy.invokeSuper(obj, args);
+        System.out.println("执行目标方法之后的逻辑...");
+        return result;
     }
 }
-```
 
-**3.获取代理类**
+public class UserService {
+    public void addUser(String name) {
+        System.out.println("添加用户：" + name);
+    }
+}
 
-```java
-import net.sf.cglib.proxy.Enhancer;
-
-public class CglibProxyFactory {
-    public static Object getProxy(Class<?> clazz) {
-        // 创建动态代理增强类
+public class Main {
+    public static void main(String[] args) {
         Enhancer enhancer = new Enhancer();
-        // 设置类加载器
-        enhancer.setClassLoader(clazz.getClassLoader());
-        // 设置被代理类
-        enhancer.setSuperclass(clazz);
-        // 设置方法拦截器
-        enhancer.setCallback(new DebugMethodInterceptor());
-        // 创建代理类
-        return enhancer.create();
+        enhancer.setSuperclass(UserService.class);
+        enhancer.setCallback(new UserServiceInterceptor());
+        UserService userService = (UserService) enhancer.create();
+        userService.addUser("张三");
     }
 }
 ```
 
-**4.实际使用**
-
-```java
-AliSmsService aliSmsService = (AliSmsService) CglibProxyFactory.getProxy(AliSmsService.class);
-aliSmsService.send("java");
-```
-
-运行上述代码之后，控制台打印出：
-
-```bash
-before method send
-send message:java
-after method send
-```
+在上述示例中，UserServiceInterceptor是一个实现了MethodInterceptor接口的拦截器类，它负责在目标方法执行前后添加逻辑。Main类中通过创建Enhancer对象，并设置被代理类的类对象和拦截器，最终通过Enhancer对象的create方法创建代理对象。当执行代理对象的addUser方法时，UserServiceInterceptor会先执行"执行目标方法之前的逻辑..."，然后调用目标方法，最后执行"执行目标方法之后的逻辑..."。
 
 ### JDK 动态代理和 CGLIB 动态代理对比
 
